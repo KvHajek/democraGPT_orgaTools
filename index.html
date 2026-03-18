@@ -233,7 +233,7 @@
 
   <script>
     const CALENDAR_ID = "c_e81f71776b2d2abd7f0852cf7f5cbc512b14a84dc1d53e5725da0e86bd2053a7@group.calendar.google.com";
-    const API_KEY = "AIzaSyAN-gC7k2tEqUXzHdpgS2yvRexIep__bWM";
+    const API_KEY = "DEIN_GOOGLE_API_KEY";
     const TIME_ZONE = "Europe/Berlin";
     const DAYS_TO_SHOW = 14;
 
@@ -508,7 +508,7 @@
 
     async function init() {
       try {
-        if (!API_KEY || API_KEY === "DEIN_GOOGLE_API_KEY") {
+        if (!API_KEY || API_KEY === "AIzaSyAN-gC7k2tEqUXzHdpgS2yvRexIep__bWM") {
           statusEl.innerHTML = `
             <div class="error">
               Bitte zuerst deinen Google API Key eintragen:
