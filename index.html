@@ -186,16 +186,21 @@
       border-radius: 6px;
     }
 
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
     @media (max-width: 1200px) {
-      .grid {
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-      }
+      .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
     }
 
     @media (max-width: 800px) {
-      .grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
+      .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
 
     @media (max-width: 520px) {
@@ -215,21 +220,22 @@
     <div id="calendar"></div>
 
     <div class="footer">
-      ICS-basiert · geeignet für Einbettung in Notion
+      Kalender:
+      <a
+        href="https://calendar.google.com/calendar/embed?src=c_e81f71776b2d2abd7f0852cf7f5cbc512b14a84dc1d53e5725da0e86bd2053a7%40group.calendar.google.com&ctz=Europe%2FBerlin"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        in Google Kalender öffnen
+      </a>
     </div>
   </div>
 
-  <script src="https://unpkg.com/ical.js/dist/ical.min.js"></script>
   <script>
+    const CALENDAR_ID = "c_e81f71776b2d2abd7f0852cf7f5cbc512b14a84dc1d53e5725da0e86bd2053a7@group.calendar.google.com";
+    const API_KEY = "AIzaSyAN-gC7k2tEqUXzHdpgS2yvRexIep__bWM";
     const TIME_ZONE = "Europe/Berlin";
     const DAYS_TO_SHOW = 14;
-
-    // Hier DEINEN öffentlichen ICS-Link eintragen:
-    const ICS_URL = "https://calendar.google.com/calendar/ical/c_e81f71776b2d2abd7f0852cf7f5cbc512b14a84dc1d53e5725da0e86bd2053a7%40group.calendar.google.com/public/basic.ics"
-
-    // Öffentlicher Proxy für CORS.
-    // Für stabilen Einsatz besser später durch eigenen kleinen Proxy ersetzen.
-    const CORS_PROXY = "https://cors.isomorphic-git.org/";
 
     const statusEl = document.getElementById("status");
     const calendarEl = document.getElementById("calendar");
@@ -250,10 +256,7 @@
       return {
         year: Number(get("year")),
         month: Number(get("month")),
-        day: Number(get("day")),
-        weekday: get("weekday"),
-        hour: get("hour"),
-        minute: get("minute")
+        day: Number(get("day"))
       };
     }
 
@@ -308,12 +311,12 @@
       }).format(dateUTC);
     }
 
-    function timeLabel(date) {
+    function timeLabel(dateString) {
       return new Intl.DateTimeFormat("de-DE", {
         hour: "2-digit",
         minute: "2-digit",
         timeZone: TIME_ZONE
-      }).format(date);
+      }).format(new Date(dateString));
     }
 
     function escapeHtml(str) {
@@ -331,103 +334,88 @@
       return (tmp.textContent || tmp.innerText || "").trim();
     }
 
-    function getRangeDates() {
-      const start = getStartOfWeekBerlin();
-      const end = addDays(start, DAYS_TO_SHOW);
-      return { start, end };
-    }
+    function formatEventTime(event) {
+      const isAllDay = !!event.start.date;
 
-    async function fetchICS() {
-      if (!ICS_URL || ICS_URL === "DEIN_ICS_LINK_HIER") {
-        throw new Error("Bitte zuerst den öffentlichen ICS-Link eintragen.");
-      }
+      if (isAllDay) return "Ganztägig";
 
-      const response = await fetch(CORS_PROXY + ICS_URL);
-      if (!response.ok) {
-        throw new Error(`ICS konnte nicht geladen werden: ${response.status}`);
-      }
-
-      return await response.text();
-    }
-
-    function eventOccursInRange(event, rangeStart, rangeEnd) {
-      const eventStart = event.startDate.toJSDate();
-      return eventStart < rangeEnd && eventStart >= rangeStart;
-    }
-
-    function expandRecurringEvents(vcalendar, rangeStart, rangeEnd) {
-      const vevents = vcalendar.getAllSubcomponents("vevent");
-      const allEvents = [];
-
-      for (const vevent of vevents) {
-        const event = new ICAL.Event(vevent);
-
-        if (event.isRecurrenceException()) continue;
-
-        if (event.isRecurring()) {
-          const iterator = event.iterator();
-          let next;
-          let count = 0;
-
-          while ((next = iterator.next())) {
-            count++;
-            if (count > 500) break;
-
-            const occurrenceDate = next.toJSDate();
-            if (occurrenceDate >= rangeEnd) break;
-            if (occurrenceDate < rangeStart) continue;
-
-            const occurrence = event.getOccurrenceDetails(next);
-
-            allEvents.push({
-              summary: event.summary || "(Ohne Titel)",
-              description: event.description || "",
-              location: event.location || "",
-              start: occurrence.startDate.toJSDate(),
-              end: occurrence.endDate.toJSDate(),
-              allDay: occurrence.startDate.isDate
-            });
-          }
-        } else {
-          if (eventOccursInRange(event, rangeStart, rangeEnd)) {
-            allEvents.push({
-              summary: event.summary || "(Ohne Titel)",
-              description: event.description || "",
-              location: event.location || "",
-              start: event.startDate.toJSDate(),
-              end: event.endDate ? event.endDate.toJSDate() : null,
-              allDay: event.startDate.isDate
-            });
-          }
-        }
-      }
-
-      return allEvents;
+      const start = timeLabel(event.start.dateTime);
+      const end = event.end?.dateTime ? timeLabel(event.end.dateTime) : "";
+      return end ? `${start}–${end}` : start;
     }
 
     function getEventDateKey(event) {
-      const p = formatBerlinParts(event.start);
-      return `${String(p.year).padStart(4, "0")}-${String(p.month).padStart(2, "0")}-${String(p.day).padStart(2, "0")}`;
+      if (event.start.date) {
+        return event.start.date;
+      }
+
+      const start = new Date(event.start.dateTime);
+      const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: TIME_ZONE,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit"
+      }).formatToParts(start);
+
+      const get = (type) => parts.find(p => p.type === type)?.value || "";
+      return `${get("year")}-${get("month")}-${get("day")}`;
     }
 
     function sortEvents(events) {
       return [...events].sort((a, b) => {
-        if (a.allDay && !b.allDay) return -1;
-        if (!a.allDay && b.allDay) return 1;
-        return a.start.getTime() - b.start.getTime();
+        const aAllDay = !!a.start.date;
+        const bAllDay = !!b.start.date;
+
+        if (aAllDay && !bAllDay) return -1;
+        if (!aAllDay && bAllDay) return 1;
+
+        const aTime = new Date(a.start.dateTime || a.start.date).getTime();
+        const bTime = new Date(b.start.dateTime || b.start.date).getTime();
+        return aTime - bTime;
       });
     }
 
-    function formatEventTime(event) {
-      if (event.allDay) return "Ganztägig";
+    async function fetchEvents() {
+      const start = getStartOfWeekBerlin();
+      const end = addDays(start, DAYS_TO_SHOW);
 
-      const start = timeLabel(event.start);
-      const end = event.end ? timeLabel(event.end) : "";
-      return end ? `${start}–${end}` : start;
+      const timeMin = new Date(Date.UTC(
+        start.getUTCFullYear(),
+        start.getUTCMonth(),
+        start.getUTCDate(),
+        0, 0, 0
+      )).toISOString();
+
+      const timeMax = new Date(Date.UTC(
+        end.getUTCFullYear(),
+        end.getUTCMonth(),
+        end.getUTCDate(),
+        23, 59, 59
+      )).toISOString();
+
+      const url = new URL(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(CALENDAR_ID)}/events`);
+      url.searchParams.set("key", API_KEY);
+      url.searchParams.set("singleEvents", "true");
+      url.searchParams.set("orderBy", "startTime");
+      url.searchParams.set("timeMin", timeMin);
+      url.searchParams.set("timeMax", timeMax);
+      url.searchParams.set("timeZone", TIME_ZONE);
+      url.searchParams.set("maxResults", "250");
+
+      const response = await fetch(url.toString());
+      const data = await response.json();
+
+      if (!response.ok) {
+        const message = data?.error?.message || `${response.status} ${response.statusText}`;
+        throw new Error(message);
+      }
+
+      return data.items || [];
     }
 
     function groupEventsByDay(events) {
       const map = new Map();
+
       for (const event of events) {
         const key = getEventDateKey(event);
         if (!map.has(key)) map.set(key, []);
@@ -495,7 +483,7 @@
 
             item.innerHTML = `
               <div class="event-time">${escapeHtml(formatEventTime(event))}</div>
-              <div class="event-title">${escapeHtml(event.summary)}</div>
+              <div class="event-title">${escapeHtml(event.summary || "(Ohne Titel)")}</div>
               ${location}
               ${desc}
             `;
@@ -520,24 +508,30 @@
 
     async function init() {
       try {
-        const { start, end } = getRangeDates();
+        if (!API_KEY || API_KEY === "DEIN_GOOGLE_API_KEY") {
+          statusEl.innerHTML = `
+            <div class="error">
+              Bitte zuerst deinen Google API Key eintragen:
+              <br><br>
+              <code>const API_KEY = "DEIN_GOOGLE_API_KEY";</code>
+            </div>
+          `;
+          return;
+        }
 
-        const icsText = await fetchICS();
-        const jcalData = ICAL.parse(icsText);
-        const vcalendar = new ICAL.Component(jcalData);
-
-        const events = expandRecurringEvents(vcalendar, start, end);
+        const events = await fetchEvents();
         statusEl.textContent = `Geladen: ${events.length} Termine`;
         renderCalendar(events);
       } catch (error) {
         console.error(error);
         statusEl.innerHTML = `
           <div class="error">
-            Die ICS-Termine konnten nicht geladen werden.<br><br>
+            Die Termine konnten nicht geladen werden.<br><br>
             Prüfe bitte:
-            <br>– Ist der Kalender wirklich öffentlich?
-            <br>– Ist der ICS-Link korrekt?
-            <br>– Blockiert der verwendete Proxy den Abruf?
+            <br>– Ist die Google Calendar API aktiviert?
+            <br>– Ist der Kalender öffentlich?
+            <br>– Ist der API Key korrekt?
+            <br>– Ist der API Key für diese GitHub-Pages-Domain freigegeben?
             <br><br>
             Hinweis:
             <br><code>${escapeHtml(error.message)}</code>
